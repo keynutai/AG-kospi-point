@@ -1,0 +1,11 @@
+# Python 가상환경
+kospi_venv/
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# IDE / 시스템 파일
+.DS_Store
+.vscode/
+.idea/
