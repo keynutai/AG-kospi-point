@@ -16,32 +16,41 @@
   - 🔵 **하락** (`▼ -X.XX%`): 파란색
 - **월별 구분선** 제공 (중앙 정렬 + 흰색 텍스트)
 - 모던한 **다크 모드 HTML 결과물** 및 주요 통계 카드 (최고가, 최저가, 평균가, 최근가) 제공
+- **간편한 실행 환경**: macOS Finder에서 더블클릭만으로 데이터 수집이 가능한 `.command` 실행 파일 제공
 
 ---
 
-## 📁 결과물 예시
+## 📁 파일 구성 및 결과물 예시
 
-1. **텍스트 파일 (`kospi_closing_prices.txt`)**: 깔끔하게 정렬된 콘솔용 텍스트 문서
-2. **HTML 파일 (`kospi_closing_prices.html`)**: 모던 웹 스타일의 인터랙티브 리포트
+1. `run_kospi.command`: 더블클릭하여 프로그램을 바로 실행하는 macOS 전용 실행 파일
+2. `kospi_closing_prices.txt`: 깔끔하게 정렬된 콘솔용 텍스트 문서
+3. `kospi_closing_prices.html`: 모던 웹 스타일의 인터랙티브 리포트
 
 ---
 
 ## 🚀 실행 방법
 
-### 1. 저장소 클론
+### 🖱️ 방법 A: 마우스 더블클릭으로 실행 (추천)
+Finder에서 `run_kospi.command` 파일을 더블클릭하면 터미널 창이 열리면서 자동으로 데이터를 최신 상태로 수집 및 갱신합니다.
+
+---
+
+### 💻 방법 B: 터미널에서 직접 실행
+
+#### 1. 저장소 클론
 ```bash
 git clone https://github.com/keynutai/AG-kospi-point.git
 cd AG-kospi-point
 ```
 
-### 2. 가상환경 생성 및 패키지 설치
+#### 2. 가상환경 생성 및 패키지 설치
 ```bash
 python3 -m venv kospi_venv
 source kospi_venv/bin/activate
 pip install yfinance
 ```
 
-### 3. 스크립트 실행
+#### 3. 스크립트 실행
 ```bash
 python kospi_fetch.py
 ```
