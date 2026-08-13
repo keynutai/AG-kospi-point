@@ -4,6 +4,8 @@
 
 대한민국 코스피(^KS11) 지수의 일별 마감가를 수집하여 **텍스트 파일(.txt)** 및 **시각화된 HTML 파일(.html)**로 저장해 주는 Python 프로그램입니다.
 
+🌐 **웹 페이지 링크**: [https://keynutai.github.io/AG-kospi-point/](https://keynutai.github.io/AG-kospi-point/)
+
 ---
 
 ## 🌟 주요 기능
@@ -16,6 +18,7 @@
   - 🔵 **하락** (`▼ -X.XX%`): 파란색
 - **월별 구분선** 제공 (중앙 정렬 + 흰색 텍스트)
 - 모던한 **다크 모드 HTML 결과물** 및 주요 통계 카드 (최고가, 최저가, 평균가, 최근가) 제공
+- **GitHub Pages 연동**: 웹 주소를 통해 누구나 실시간 마감가 페이지 접속 가능
 - **간편한 실행 환경**: macOS Finder에서 더블클릭만으로 데이터 수집이 가능한 `.command` 실행 파일 제공
 
 ---
@@ -24,7 +27,7 @@
 
 1. `run_kospi.command`: 더블클릭하여 프로그램을 바로 실행하는 macOS 전용 실행 파일
 2. `kospi_closing_prices.txt`: 깔끔하게 정렬된 콘솔용 텍스트 문서
-3. `kospi_closing_prices.html`: 모던 웹 스타일의 인터랙티브 리포트
+3. `kospi_closing_prices.html` / `index.html`: 모던 웹 스타일의 인터랙티브 리포트 (GitHub Pages용)
 
 ---
 
@@ -54,4 +57,4 @@ pip install yfinance
 ```bash
 python kospi_fetch.py
 ```
-*(실행 후 해당 폴더에 `kospi_closing_prices.txt`와 `kospi_closing_prices.html`이 자동 생성/업데이트됩니다.)*
+*(실행 후 해당 폴더에 `kospi_closing_prices.txt`, `kospi_closing_prices.html`, `index.html`이 자동 생성/업데이트됩니다.)*

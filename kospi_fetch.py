@@ -16,6 +16,7 @@ START_DATE       = "2026-01-01"
 END_DATE         = date.today().strftime("%Y-%m-%d")
 OUTPUT_FILE      = "kospi_closing_prices.txt"
 OUTPUT_FILE_HTML = "kospi_closing_prices.html"
+OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 파일
 # ────────────────────────────────────────────────────────────
 
 
@@ -382,6 +383,7 @@ def main():
 
     # HTML 저장
     save_to_html(df, os.path.join(base, OUTPUT_FILE_HTML), last_2025_date, last_2025)
+    save_to_html(df, os.path.join(base, OUTPUT_FILE_INDEX), last_2025_date, last_2025)
 
     # 통계 출력
     close_series = df["Close"]
