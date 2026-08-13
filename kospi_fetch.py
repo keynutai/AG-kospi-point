@@ -3,7 +3,7 @@
 - 기간: 2026년 1월 1일 ~ 오늘
 - 데이터 소스: Yahoo Finance (^KS11)
 - 저장 형식: 텍스트 파일 (kospi_closing_prices.txt)
-            + HTML 파일 (kospi_closing_prices.html)
+            + HTML 파일 (kospi_closing_prices.html, index.html)
 """
 
 import yfinance as yf
@@ -72,43 +72,46 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
     now_str      = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     close_series = df["Close"]
 
-    # ── 월별 테이블 행 생성 ──
+    # ── 월별 테이블 행 생성 (과거순 asc / 최신순 desc 준비) ──
     MONTH_KO = ["", "1월", "2월", "3월", "4월", "5월", "6월",
                 "7월", "8월", "9월", "10월", "11월", "12월"]
-    rows = []
-    current_month = None
 
-    for idx, row in df.iterrows():
-        month_key = (idx.year, idx.month)
-        if month_key != current_month:
-            label = f"{idx.year}년 {MONTH_KO[idx.month]}"
+    def build_rows(data_df):
+        rows = []
+        current_month = None
+        for idx, row in data_df.iterrows():
+            month_key = (idx.year, idx.month)
+            if month_key != current_month:
+                label = f"{idx.year}년 {MONTH_KO[idx.month]}"
+                rows.append(
+                    f'<tr class="month-sep"><td colspan="3">📅 {label}</td></tr>'
+                )
+                current_month = month_key
+
+            date_str  = idx.strftime("%Y-%m-%d")
+            close_val = float(row["Close"])
+            pct       = row["Pct_Change"]
+
+            if pct != pct:
+                pct_cell = '<span class="flat">—</span>'
+            elif pct > 0:
+                pct_cell = f'<span class="up">▲ {pct:+.2f}%</span>'
+            elif pct < 0:
+                pct_cell = f'<span class="down">▼ {pct:+.2f}%</span>'
+            else:
+                pct_cell = '<span class="flat">0.00%</span>'
+
             rows.append(
-                f'<tr class="month-sep"><td colspan="3">📅 {label}</td></tr>'
+                f'<tr>'
+                f'<td class="date">{date_str}</td>'
+                f'<td class="close">{close_val:,.2f}</td>'
+                f'<td class="pct">{pct_cell}</td>'
+                f'</tr>'
             )
-            current_month = month_key
+        return "\n        ".join(rows)
 
-        date_str  = idx.strftime("%Y-%m-%d")
-        close_val = float(row["Close"])
-        pct       = row["Pct_Change"]
-
-        if pct != pct:
-            pct_cell = '<span class="flat">—</span>'
-        elif pct > 0:
-            pct_cell = f'<span class="up">▲ {pct:+.2f}%</span>'
-        elif pct < 0:
-            pct_cell = f'<span class="down">▼ {pct:+.2f}%</span>'
-        else:
-            pct_cell = '<span class="flat">0.00%</span>'
-
-        rows.append(
-            f'<tr>'
-            f'<td class="date">{date_str}</td>'
-            f'<td class="close">{close_val:,.2f}</td>'
-            f'<td class="pct">{pct_cell}</td>'
-            f'</tr>'
-        )
-
-    rows_html = "\n        ".join(rows)
+    rows_asc_html  = build_rows(df)
+    rows_desc_html = build_rows(df.iloc[::-1])
 
     # ── 통계 값 미리 계산 ──
     val_high   = f"{close_series.max():,.0f}"
@@ -117,7 +120,7 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
     val_recent = f"{close_series.iloc[-1]:,.0f}"
     val_last   = f"{last_2025:,.2f}"
 
-    # ── HTML 생성 (CSS 중괄호 충돌 없이 raw string 사용) ──
+    # ── HTML 생성 ──
     html = """\
 <!DOCTYPE html>
 <html lang="ko">
@@ -201,6 +204,49 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
     .stat-card.low  .stat-value { color: #58a6ff; }
     .stat-card.avg  .stat-value { color: #e6edf3; }
     .stat-card.last .stat-value { color: #e6edf3; }
+
+    /* ── 정렬 컨트롤 바 ── */
+    .controls-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.8rem;
+      padding: 0 0.4rem;
+    }
+    .controls-title {
+      font-size: 0.85rem;
+      color: #8b949e;
+      font-weight: 500;
+    }
+    .sort-buttons {
+      display: flex;
+      gap: 0.4rem;
+      background: #161b22;
+      padding: 4px;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+    }
+    .sort-btn {
+      background: transparent;
+      border: none;
+      color: #8b949e;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.4rem 0.85rem;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .sort-btn:hover {
+      color: #e6edf3;
+    }
+    .sort-btn.active {
+      background: #238636;
+      color: #ffffff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    }
+
     .table-wrapper {
       background: #161b22;
       border: 1px solid #30363d;
@@ -294,6 +340,14 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
     </div>
   </div>
 
+  <div class="controls-bar">
+    <div class="controls-title">📈 일별 거래 내역</div>
+    <div class="sort-buttons">
+      <button id="btnDesc" class="sort-btn active" onclick="setSortOrder('desc')">⏳ 최신순</button>
+      <button id="btnAsc" class="sort-btn" onclick="setSortOrder('asc')">⌛ 과거순</button>
+    </div>
+  </div>
+
   <div class="table-wrapper">
     <table>
       <thead>
@@ -303,8 +357,8 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
           <th>전일대비</th>
         </tr>
       </thead>
-      <tbody>
-        %%ROWS%%
+      <tbody id="tableBody">
+        %%ROWS_DESC%%
       </tbody>
     </table>
   </div>
@@ -314,6 +368,28 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
   </div>
 
 </div>
+
+<script>
+  const rowsAsc = `%%ROWS_ASC%%`;
+  const rowsDesc = `%%ROWS_DESC%%`;
+
+  function setSortOrder(order) {
+    const tableBody = document.getElementById('tableBody');
+    const btnAsc = document.getElementById('btnAsc');
+    const btnDesc = document.getElementById('btnDesc');
+
+    if (order === 'desc') {
+      tableBody.innerHTML = rowsDesc;
+      btnDesc.classList.add('active');
+      btnAsc.classList.remove('active');
+    } else {
+      tableBody.innerHTML = rowsAsc;
+      btnAsc.classList.add('active');
+      btnDesc.classList.remove('active');
+    }
+  }
+</script>
+
 </body>
 </html>
 """
@@ -331,7 +407,8 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
         .replace("%%LOW%%",        val_low)
         .replace("%%AVG%%",        val_avg)
         .replace("%%RECENT%%",     val_recent)
-        .replace("%%ROWS%%",       rows_html)
+        .replace("%%ROWS_ASC%%",   rows_asc_html)
+        .replace("%%ROWS_DESC%%",  rows_desc_html)
     )
 
     with open(output_path, "w", encoding="utf-8") as f:
