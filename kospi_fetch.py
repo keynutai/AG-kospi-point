@@ -7,13 +7,13 @@
 """
 
 import yfinance as yf
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import os
 
 # ── 설정 ────────────────────────────────────────────────────
 TICKER           = "^KS11"
 START_DATE       = "2026-01-01"
-END_DATE         = date.today().strftime("%Y-%m-%d")
+END_DATE         = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
 OUTPUT_FILE      = "kospi_closing_prices.txt"
 OUTPUT_FILE_HTML = "kospi_closing_prices.html"
 OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 파일
