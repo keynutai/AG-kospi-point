@@ -132,22 +132,74 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── CSS 변수: 다크 테마 (기본) ── */
+    :root {
+      --bg:           #0d1117;
+      --bg-card:      #161b22;
+      --bg-card2:     #1c2333;
+      --border:       #30363d;
+      --border-sep:   #30363d;
+      --text:         #e6edf3;
+      --text-muted:   #8b949e;
+      --text-footer:  #484f58;
+      --text-strong:  #e6edf3;
+      --month-sep-bg: #1c2333;
+      --month-sep-fg: #ffffff;
+      --row-hover:    #1c2333;
+      --thead-bg:     #1c2333;
+      --btn-bg:       #161b22;
+      --btn-fg:       #8b949e;
+      --btn-hover-fg: #e6edf3;
+      --h1-color:     #58a6ff;
+      --close-fg:     #e6edf3;
+      --date-fg:      #8b949e;
+      --title-fg:     #8b949e;
+      --transition:   background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    }
+
+    /* ── CSS 변수: 라이트 테마 ── */
+    body.light {
+      --bg:           #f6f8fa;
+      --bg-card:      #ffffff;
+      --bg-card2:     #eaf0f6;
+      --border:       #d0d7de;
+      --border-sep:   #d0d7de;
+      --text:         #1f2328;
+      --text-muted:   #656d76;
+      --text-footer:  #aaaaaa;
+      --text-strong:  #1f2328;
+      --month-sep-bg: #eaf0f6;
+      --month-sep-fg: #1f2328;
+      --row-hover:    #eaf0f6;
+      --thead-bg:     #f0f4f8;
+      --btn-bg:       #f0f4f8;
+      --btn-fg:       #656d76;
+      --btn-hover-fg: #1f2328;
+      --h1-color:     #0969da;
+      --close-fg:     #1f2328;
+      --date-fg:      #656d76;
+      --title-fg:     #656d76;
+    }
+
     body {
       font-family: 'Inter', sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
       padding: 2.5rem 1rem;
+      transition: var(--transition);
     }
     .container { max-width: 780px; margin: 0 auto; }
     .header-card {
-      background: linear-gradient(135deg, #161b22 0%, #1c2333 100%);
-      border: 1px solid #30363d;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       border-radius: 16px;
       padding: 2rem 2.5rem;
       margin-bottom: 1.2rem;
       position: relative;
       overflow: hidden;
+      transition: var(--transition);
     }
     .header-card::after {
       content: '';
@@ -160,7 +212,7 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
     .header-card h1 {
       font-size: 1.55rem;
       font-weight: 700;
-      color: #58a6ff;
+      color: var(--h1-color);
       letter-spacing: -0.02em;
       margin-bottom: 1rem;
     }
@@ -169,10 +221,10 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 0.5rem 2rem;
       font-size: 0.85rem;
-      color: #8b949e;
+      color: var(--text-muted);
     }
     .meta-grid div { white-space: nowrap; }
-    .meta-grid strong { color: #e6edf3; font-weight: 500; }
+    .meta-grid strong { color: var(--text-strong); font-weight: 500; }
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -180,17 +232,17 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
       margin-bottom: 1.2rem;
     }
     .stat-card {
-      background: #161b22;
-      border: 1px solid #30363d;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       border-radius: 12px;
       padding: 1rem 0.8rem;
       text-align: center;
-      transition: border-color 0.2s;
+      transition: var(--transition), border-color 0.2s;
     }
-    .stat-card:hover { border-color: #58a6ff; }
+    .stat-card:hover { border-color: var(--h1-color); }
     .stat-label {
       font-size: 0.68rem;
-      color: #8b949e;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.07em;
       margin-bottom: 0.4rem;
@@ -202,34 +254,41 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
     }
     .stat-card.high .stat-value { color: #f85149; }
     .stat-card.low  .stat-value { color: #58a6ff; }
-    .stat-card.avg  .stat-value { color: #e6edf3; }
-    .stat-card.last .stat-value { color: #e6edf3; }
+    .stat-card.avg  .stat-value { color: var(--text); }
+    .stat-card.last .stat-value { color: var(--text); }
 
-    /* ── 정렬 컨트롤 바 ── */
+    /* ── 컨트롤 바 (정렬 + 테마) ── */
     .controls-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 0.8rem;
       padding: 0 0.4rem;
+      gap: 0.6rem;
     }
     .controls-title {
       font-size: 0.85rem;
-      color: #8b949e;
+      color: var(--title-fg);
       font-weight: 500;
+      flex: 1;
     }
-    .sort-buttons {
+    .controls-right {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .btn-group {
       display: flex;
       gap: 0.4rem;
-      background: #161b22;
+      background: var(--btn-bg);
       padding: 4px;
-      border: 1px solid #30363d;
+      border: 1px solid var(--border);
       border-radius: 10px;
+      transition: var(--transition);
     }
-    .sort-btn {
+    .ctrl-btn {
       background: transparent;
       border: none;
-      color: #8b949e;
+      color: var(--btn-fg);
       font-family: 'Inter', sans-serif;
       font-size: 0.78rem;
       font-weight: 600;
@@ -237,21 +296,24 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
       border-radius: 7px;
       cursor: pointer;
       transition: all 0.2s ease;
+      white-space: nowrap;
     }
-    .sort-btn:hover {
-      color: #e6edf3;
-    }
-    .sort-btn.active {
+    .ctrl-btn:hover { color: var(--btn-hover-fg); }
+    .ctrl-btn.active {
       background: #238636;
       color: #ffffff;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    .theme-btn.active {
+      background: #6e40c9;
     }
 
     .table-wrapper {
-      background: #161b22;
-      border: 1px solid #30363d;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       border-radius: 16px;
       overflow: hidden;
+      transition: var(--transition);
     }
     table {
       width: 100%;
@@ -259,52 +321,55 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
       font-size: 0.875rem;
     }
     thead th {
-      background: #1c2333;
-      color: #8b949e;
+      background: var(--thead-bg);
+      color: var(--text-muted);
       font-weight: 600;
       font-size: 0.72rem;
       text-transform: uppercase;
       letter-spacing: 0.07em;
       padding: 0.9rem 1.4rem;
       text-align: right;
+      transition: var(--transition);
     }
     thead th:first-child { text-align: left; }
     tbody tr {
-      border-top: 1px solid #21262d;
+      border-top: 1px solid var(--border);
       transition: background 0.12s;
     }
-    tbody tr:hover:not(.month-sep) { background: #1c2333; }
+    tbody tr:hover:not(.month-sep) { background: var(--row-hover); }
     tr.month-sep td {
-      background: #1c2333;
-      color: #ffffff;
+      background: var(--month-sep-bg);
+      color: var(--month-sep-fg);
       text-align: center;
       font-size: 0.8rem;
       font-weight: 600;
       letter-spacing: 0.06em;
       padding: 0.6rem 1.4rem;
-      border-top: 2px solid #30363d;
+      border-top: 2px solid var(--border-sep);
+      transition: var(--transition);
     }
     td {
       padding: 0.6rem 1.4rem;
       font-family: 'JetBrains Mono', monospace;
       text-align: right;
     }
-    td.date  { text-align: left; color: #8b949e; font-size: 0.82rem; }
-    td.close { color: #e6edf3; }
+    td.date  { text-align: left; color: var(--date-fg); font-size: 0.82rem; }
+    td.close { color: var(--close-fg); }
     td.pct   { min-width: 110px; }
     .up   { color: #f85149; font-weight: 600; }
     .down { color: #4a9eff; font-weight: 600; }
-    .flat { color: #8b949e; }
+    .flat { color: var(--text-muted); }
     .footer {
       text-align: center;
       margin-top: 1.2rem;
       font-size: 0.73rem;
-      color: #484f58;
+      color: var(--text-footer);
     }
     @media (max-width: 580px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       .header-card { padding: 1.3rem 1.5rem; }
       thead th, td { padding-left: 0.8rem; padding-right: 0.8rem; }
+      .controls-bar { flex-wrap: wrap; }
     }
   </style>
 </head>
@@ -342,9 +407,15 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
 
   <div class="controls-bar">
     <div class="controls-title">📈 일별 거래 내역</div>
-    <div class="sort-buttons">
-      <button id="btnDesc" class="sort-btn active" onclick="setSortOrder('desc')">⏳ 최신순</button>
-      <button id="btnAsc" class="sort-btn" onclick="setSortOrder('asc')">⌛ 과거순</button>
+    <div class="controls-right">
+      <div class="btn-group">
+        <button id="btnDesc" class="ctrl-btn active" onclick="setSortOrder('desc')">⏳ 최신순</button>
+        <button id="btnAsc"  class="ctrl-btn"        onclick="setSortOrder('asc')">⌛ 과거순</button>
+      </div>
+      <div class="btn-group">
+        <button id="btnDark"  class="ctrl-btn theme-btn active" onclick="setTheme('dark')">🌙 어둡게</button>
+        <button id="btnLight" class="ctrl-btn theme-btn"        onclick="setTheme('light')">☀️ 밝게</button>
+      </div>
     </div>
   </div>
 
@@ -370,14 +441,13 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
 </div>
 
 <script>
-  const rowsAsc = `%%ROWS_ASC%%`;
+  const rowsAsc  = `%%ROWS_ASC%%`;
   const rowsDesc = `%%ROWS_DESC%%`;
 
   function setSortOrder(order) {
     const tableBody = document.getElementById('tableBody');
-    const btnAsc = document.getElementById('btnAsc');
+    const btnAsc  = document.getElementById('btnAsc');
     const btnDesc = document.getElementById('btnDesc');
-
     if (order === 'desc') {
       tableBody.innerHTML = rowsDesc;
       btnDesc.classList.add('active');
@@ -386,6 +456,21 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
       tableBody.innerHTML = rowsAsc;
       btnAsc.classList.add('active');
       btnDesc.classList.remove('active');
+    }
+  }
+
+  function setTheme(theme) {
+    const body      = document.body;
+    const btnDark   = document.getElementById('btnDark');
+    const btnLight  = document.getElementById('btnLight');
+    if (theme === 'light') {
+      body.classList.add('light');
+      btnLight.classList.add('active');
+      btnDark.classList.remove('active');
+    } else {
+      body.classList.remove('light');
+      btnDark.classList.add('active');
+      btnLight.classList.remove('active');
     }
   }
 </script>
