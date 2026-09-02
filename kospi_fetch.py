@@ -463,16 +463,25 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
     const body      = document.body;
     const btnDark   = document.getElementById('btnDark');
     const btnLight  = document.getElementById('btnLight');
+    
     if (theme === 'light') {
       body.classList.add('light');
-      btnLight.classList.add('active');
-      btnDark.classList.remove('active');
+      if(btnLight) btnLight.classList.add('active');
+      if(btnDark) btnDark.classList.remove('active');
+      localStorage.setItem('theme', 'light');
     } else {
       body.classList.remove('light');
-      btnDark.classList.add('active');
-      btnLight.classList.remove('active');
+      if(btnDark) btnDark.classList.add('active');
+      if(btnLight) btnLight.classList.remove('active');
+      localStorage.setItem('theme', 'dark');
     }
   }
+
+  // 초기 테마 설정 (localStorage 우선, 없으면 기본값 'light')
+  document.addEventListener('DOMContentLoaded', () => {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    setTheme(savedTheme);
+  });
 </script>
 
 </body>
