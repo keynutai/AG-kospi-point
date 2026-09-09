@@ -1,32 +1,57 @@
 """
 코스피 지수 일별 마감가 수집 프로그램
 - 기간: 2026년 1월 1일 ~ 오늘
-- 데이터 소스: FinanceDataReader (KS11)
+- 데이터 소스: Yahoo Finance (^KS11) 및 FinanceDataReader (KS11) 자동 선택
 - 저장 형식: 텍스트 파일 (kospi_closing_prices.txt)
             + HTML 파일 (kospi_closing_prices.html, index.html)
 """
 
+import yfinance as yf
 import FinanceDataReader as fdr
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import os
 
 # ── 설정 ────────────────────────────────────────────────────
-TICKER           = "KS11"
+TICKER_YF        = "^KS11"
+TICKER_FDR       = "KS11"
 START_DATE       = "2026-01-01"
-END_DATE         = date.today().strftime("%Y-%m-%d")
+END_DATE         = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
 OUTPUT_FILE      = "kospi_closing_prices.txt"
 OUTPUT_FILE_HTML = "kospi_closing_prices.html"
 OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 파일
 # ────────────────────────────────────────────────────────────
 
 
-def fetch_kospi_data(ticker, start, end):
-    """FinanceDataReader를 사용하여 코스피 일별 데이터를 가져옵니다."""
+def fetch_kospi_data(start, end):
+    """Yahoo Finance와 FinanceDataReader 중 더 최신 데이터를 제공하는 소스를 자동으로 선택하여 반환합니다."""
     print(f"📡 코스피 데이터 다운로드 중... ({start} ~ {end})")
-    df = fdr.DataReader(ticker, start, end)
-    if df.empty:
-        raise ValueError("데이터를 가져오지 못했습니다. 인터넷 연결 및 날짜 범위를 확인하세요.")
-    return df
+    
+    df_yf = None
+    df_fdr = None
+    
+    try:
+        df_yf = yf.download(TICKER_YF, start=start, end=end, progress=False, auto_adjust=True)
+    except Exception as e:
+        print(f"   [경고] Yahoo Finance 데이터 수집 실패: {e}")
+
+    try:
+        df_fdr = fdr.DataReader(TICKER_FDR, start, end)
+    except Exception as e:
+        print(f"   [경고] FinanceDataReader 데이터 수집 실패: {e}")
+
+    if (df_yf is None or df_yf.empty) and (df_fdr is None or df_fdr.empty):
+        raise ValueError("두 데이터 소스 모두에서 데이터를 가져오지 못했습니다. 인터넷 연결을 확인하세요.")
+
+    # 두 소스의 마지막 데이터 날짜 비교
+    yf_last_date = df_yf.index[-1] if (df_yf is not None and not df_yf.empty) else datetime.min
+    fdr_last_date = df_fdr.index[-1] if (df_fdr is not None and not df_fdr.empty) else datetime.min
+
+    if fdr_last_date > yf_last_date:
+        print(f"   └ 채택된 데이터 소스: FinanceDataReader (최근 데이터: {fdr_last_date.strftime('%Y-%m-%d')})")
+        return df_fdr, f"FinanceDataReader ({TICKER_FDR})"
+    else:
+        print(f"   └ 채택된 데이터 소스: Yahoo Finance (최근 데이터: {yf_last_date.strftime('%Y-%m-%d')})")
+        return df_yf, f"Yahoo Finance ({TICKER_YF})"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -67,7 +92,7 @@ def save_to_file(df, output_path):
 # ──────────────────────────────────────────────────────────────
 #  HTML 저장
 # ──────────────────────────────────────────────────────────────
-def save_to_html(df, output_path, last_2025_date, last_2025):
+def save_to_html(df, output_path, last_2025_date, last_2025, data_source):
     """데이터프레임을 스타일링된 HTML 파일로 저장합니다."""
     now_str      = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     close_series = df["Close"]
@@ -102,21 +127,19 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
                 pct_cell = '<span class="flat">0.00%</span>'
 
             rows.append(
-                f'<tr>'
-                f'<td class="date">{date_str}</td>'
+                f'<tr><td class="date">{date_str}</td>'
                 f'<td class="close">{close_val:,.2f}</td>'
-                f'<td class="pct">{pct_cell}</td>'
-                f'</tr>'
+                f'<td class="pct">{pct_cell}</td></tr>'
             )
         return "\n        ".join(rows)
 
     rows_asc_html  = build_rows(df)
     rows_desc_html = build_rows(df.iloc[::-1])
 
-    # ── 통계 값 미리 계산 ──
-    val_high   = f"{close_series.max():,.0f}"
-    val_low    = f"{close_series.min():,.0f}"
-    val_avg    = f"{close_series.mean():,.0f}"
+    # ── 통계 수치 준비 ──
+    val_high   = f"{close_series.max():,.2f}"
+    val_low    = f"{close_series.min():,.2f}"
+    val_avg    = f"{close_series.mean():,.2f}"
     val_recent = f"{close_series.iloc[-1]:,.0f}"
     val_last   = f"{last_2025:,.2f}"
 
@@ -435,7 +458,7 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
   </div>
 
   <div class="footer">
-    데이터 출처: FinanceDataReader (KS11) &nbsp;·&nbsp; 자동 생성됨
+    데이터 출처: %%DATA_SOURCE%% &nbsp;·&nbsp; 자동 생성됨
   </div>
 
 </div>
@@ -491,18 +514,19 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
     # 플레이스홀더를 실제 값으로 치환
     html = (
         html
-        .replace("%%START_DATE%%", START_DATE)
-        .replace("%%END_DATE%%",   END_DATE)
-        .replace("%%TOTAL%%",      str(len(df)))
-        .replace("%%NOW%%",        now_str)
-        .replace("%%LAST_DATE%%",  last_2025_date)
-        .replace("%%LAST_VAL%%",   val_last)
-        .replace("%%HIGH%%",       val_high)
-        .replace("%%LOW%%",        val_low)
-        .replace("%%AVG%%",        val_avg)
-        .replace("%%RECENT%%",     val_recent)
-        .replace("%%ROWS_ASC%%",   rows_asc_html)
-        .replace("%%ROWS_DESC%%",  rows_desc_html)
+        .replace("%%START_DATE%%",  START_DATE)
+        .replace("%%END_DATE%%",    END_DATE)
+        .replace("%%TOTAL%%",       str(len(df)))
+        .replace("%%NOW%%",         now_str)
+        .replace("%%LAST_DATE%%",   last_2025_date)
+        .replace("%%LAST_VAL%%",    val_last)
+        .replace("%%HIGH%%",        val_high)
+        .replace("%%LOW%%",         val_low)
+        .replace("%%AVG%%",         val_avg)
+        .replace("%%RECENT%%",      val_recent)
+        .replace("%%DATA_SOURCE%%", data_source)
+        .replace("%%ROWS_ASC%%",    rows_asc_html)
+        .replace("%%ROWS_DESC%%",   rows_desc_html)
     )
 
     with open(output_path, "w", encoding="utf-8") as f:
@@ -522,7 +546,7 @@ def main():
 
     # 2025년 마지막 거래일 마감가 조회 (첫날 전일대비 계산용)
     print("📡 2025년 마지막 거래일 데이터 조회 중...")
-    df_prev  = fetch_kospi_data(TICKER, "2025-12-01", "2025-12-31")
+    df_prev, _ = fetch_kospi_data("2025-12-01", "2025-12-31")
     prev_col = df_prev["Close"]
     if isinstance(prev_col, pd.DataFrame):
         prev_col = prev_col.iloc[:, 0]
@@ -531,7 +555,7 @@ def main():
     print(f"   └ 2025년 마지막 거래일: {last_2025_date}  종가: {last_2025:,.2f} pt")
 
     # 본 데이터 수집 (2026-01-01 ~ 오늘)
-    df = fetch_kospi_data(TICKER, START_DATE, END_DATE)
+    df, data_source = fetch_kospi_data(START_DATE, END_DATE)
 
     close_col = df["Close"]
     if isinstance(close_col, pd.DataFrame):
@@ -553,8 +577,8 @@ def main():
     save_to_file(df, os.path.join(base, OUTPUT_FILE))
 
     # HTML 저장
-    save_to_html(df, os.path.join(base, OUTPUT_FILE_HTML), last_2025_date, last_2025)
-    save_to_html(df, os.path.join(base, OUTPUT_FILE_INDEX), last_2025_date, last_2025)
+    save_to_html(df, os.path.join(base, OUTPUT_FILE_HTML), last_2025_date, last_2025, data_source)
+    save_to_html(df, os.path.join(base, OUTPUT_FILE_INDEX), last_2025_date, last_2025, data_source)
 
     # 통계 출력
     close_series = df["Close"]
