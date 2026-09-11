@@ -1,13 +1,14 @@
 """
 코스피 지수 일별 마감가 수집 프로그램
 - 기간: 2026년 1월 1일 ~ 오늘
-- 데이터 소스: Yahoo Finance (^KS11) 및 FinanceDataReader (KS11) 자동 선택
+- 데이터 소스: Yahoo Finance (^KS11) + FinanceDataReader (KS11) 병합, 유효 데이터 우선
 - 저장 형식: 텍스트 파일 (kospi_closing_prices.txt)
             + HTML 파일 (kospi_closing_prices.html, index.html)
 """
 
 import yfinance as yf
 import FinanceDataReader as fdr
+import pandas as pd
 from datetime import date, datetime, timedelta
 import os
 
@@ -22,36 +23,69 @@ OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 
 # ────────────────────────────────────────────────────────────
 
 
+def _extract_close(df_raw):
+    """DataFrame에서 Close 시리즈만 추출하여 반환합니다 (MultiIndex 대응)."""
+    if df_raw is None or df_raw.empty:
+        return None
+    col = df_raw["Close"]
+    if isinstance(col, pd.DataFrame):
+        col = col.iloc[:, 0]
+    # Close가 0이거나 NaN인 행 제거 (장 시작 전 야후파이낸스의 불완전 데이터 방어)
+    col = col[col.notna() & (col > 0)]
+    return col.rename("Close")
+
+
 def fetch_kospi_data(start, end):
-    """Yahoo Finance와 FinanceDataReader 중 더 최신 데이터를 제공하는 소스를 자동으로 선택하여 반환합니다."""
+    """Yahoo Finance와 FinanceDataReader 두 소스의 Close 데이터를 병합합니다.
+    
+    날짜가 겹치면 yfinance 값을 우선합니다. 한 소스에서 특정 날짜가
+    일시 누락(새벽 재처리 중)되어도 다른 소스로 자동 보완됩니다.
+    Close=0 또는 NaN 행은 제외하여 불완전 데이터를 방어합니다.
+    """
     print(f"📡 코스피 데이터 다운로드 중... ({start} ~ {end})")
-    
-    df_yf = None
-    df_fdr = None
-    
-    try:
-        df_yf = yf.download(TICKER_YF, start=start, end=end, progress=False, auto_adjust=True)
-    except Exception as e:
-        print(f"   [경고] Yahoo Finance 데이터 수집 실패: {e}")
+
+    close_yf  = None
+    close_fdr = None
 
     try:
-        df_fdr = fdr.DataReader(TICKER_FDR, start, end)
+        raw_yf   = yf.download(TICKER_YF, start=start, end=end, progress=False, auto_adjust=True)
+        close_yf = _extract_close(raw_yf)
     except Exception as e:
-        print(f"   [경고] FinanceDataReader 데이터 수집 실패: {e}")
+        print(f"   [경고] Yahoo Finance 수집 실패: {e}")
 
-    if (df_yf is None or df_yf.empty) and (df_fdr is None or df_fdr.empty):
-        raise ValueError("두 데이터 소스 모두에서 데이터를 가져오지 못했습니다. 인터넷 연결을 확인하세요.")
+    try:
+        raw_fdr   = fdr.DataReader(TICKER_FDR, start, end)
+        close_fdr = _extract_close(raw_fdr)
+    except Exception as e:
+        print(f"   [경고] FinanceDataReader 수집 실패: {e}")
 
-    # 두 소스의 마지막 데이터 날짜 비교
-    yf_last_date = df_yf.index[-1] if (df_yf is not None and not df_yf.empty) else datetime.min
-    fdr_last_date = df_fdr.index[-1] if (df_fdr is not None and not df_fdr.empty) else datetime.min
+    if (close_yf is None or close_yf.empty) and (close_fdr is None or close_fdr.empty):
+        raise ValueError("두 데이터 소스 모두에서 유효한 데이터를 가져오지 못했습니다.")
 
-    if fdr_last_date > yf_last_date:
-        print(f"   └ 채택된 데이터 소스: FinanceDataReader (최근 데이터: {fdr_last_date.strftime('%Y-%m-%d')})")
-        return df_fdr, f"FinanceDataReader ({TICKER_FDR})"
+    # ── 두 소스 병합: fdr을 베이스로 깔고, yf로 덮어쓰기 (yf 우선) ──
+    frames = []
+    if close_fdr is not None and not close_fdr.empty:
+        frames.append(close_fdr)
+    if close_yf is not None and not close_yf.empty:
+        frames.append(close_yf)
+
+    if len(frames) == 1:
+        merged = frames[0].to_frame(name="Close")
+        source_label = "Yahoo Finance" if close_fdr is None or close_fdr.empty else "FinanceDataReader"
     else:
-        print(f"   └ 채택된 데이터 소스: Yahoo Finance (최근 데이터: {yf_last_date.strftime('%Y-%m-%d')})")
-        return df_yf, f"Yahoo Finance ({TICKER_YF})"
+        # 두 소스를 합친 뒤 같은 날짜가 겹치면 yf(마지막 추가된) 값 사용
+        merged = (
+            pd.concat(frames)
+            .groupby(level=0)
+            .last()          # yf가 나중에 append되므로 yf 값이 살아남음
+            .to_frame(name="Close")
+            .sort_index()
+        )
+        source_label = "Yahoo Finance + FinanceDataReader"
+
+    last_date = merged.index[-1].strftime("%Y-%m-%d")
+    print(f"   └ 데이터 소스: {source_label}  |  총 {len(merged)}건  |  최근: {last_date}")
+    return merged, source_label
 
 
 # ──────────────────────────────────────────────────────────────
@@ -547,20 +581,12 @@ def main():
     # 2025년 마지막 거래일 마감가 조회 (첫날 전일대비 계산용)
     print("📡 2025년 마지막 거래일 데이터 조회 중...")
     df_prev, _ = fetch_kospi_data("2025-12-01", "2025-12-31")
-    prev_col = df_prev["Close"]
-    if isinstance(prev_col, pd.DataFrame):
-        prev_col = prev_col.iloc[:, 0]
-    last_2025      = float(prev_col.iloc[-1])
-    last_2025_date = prev_col.index[-1].strftime("%Y-%m-%d")
+    last_2025      = float(df_prev["Close"].iloc[-1])
+    last_2025_date = df_prev.index[-1].strftime("%Y-%m-%d")
     print(f"   └ 2025년 마지막 거래일: {last_2025_date}  종가: {last_2025:,.2f} pt")
 
     # 본 데이터 수집 (2026-01-01 ~ 오늘)
     df, data_source = fetch_kospi_data(START_DATE, END_DATE)
-
-    close_col = df["Close"]
-    if isinstance(close_col, pd.DataFrame):
-        close_col = close_col.iloc[:, 0]
-    df = close_col.to_frame(name="Close")
 
     # 2025년 마지막 거래일을 임시로 앞에 붙여 첫 행 전일대비 계산
     prev_row = pd.DataFrame(
