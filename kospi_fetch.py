@@ -1,28 +1,105 @@
 """
 코스피 지수 일별 마감가 수집 프로그램
 - 기간: 2026년 1월 1일 ~ 오늘
-- 데이터 소스: Yahoo Finance (^KS11) + FinanceDataReader (KS11) 병합, 유효 데이터 우선
-- 저장 형식: 텍스트 파일 (kospi_closing_prices.txt)
-            + HTML 파일 (kospi_closing_prices.html, index.html)
+- 데이터 소스: Yahoo Finance (^KS11) + FinanceDataReader (KS11) 병합 수집
+- 저장소: SQLite 데이터베이스 (kospi.db) - 일주일 전 ~ 오늘 증분 업데이트
+- 출력: 웹 HTML 파일 (index.html)
 """
 
 import yfinance as yf
 import FinanceDataReader as fdr
 import pandas as pd
+import sqlite3
 from datetime import date, datetime, timedelta
 import os
 
 # ── 설정 ────────────────────────────────────────────────────
 TICKER_YF        = "^KS11"
 TICKER_FDR       = "KS11"
-START_DATE       = "2026-01-01"
-END_DATE         = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
-OUTPUT_FILE      = "kospi_closing_prices.txt"
-OUTPUT_FILE_HTML = "kospi_closing_prices.html"
-OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 파일
+DB_FILE          = "kospi.db"
+OUTPUT_FILE_INDEX= "index.html"                 # 웹 리포트 및 GitHub Pages 인덱스 파일
 # ────────────────────────────────────────────────────────────
 
 
+# ──────────────────────────────────────────────────────────────
+#  데이터베이스 관리
+# ──────────────────────────────────────────────────────────────
+def init_db(db_path):
+    """SQLite 데이터베이스 테이블을 초기화합니다."""
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS kospi_daily (
+                date TEXT PRIMARY KEY,
+                close REAL NOT NULL
+            );
+        """)
+        conn.commit()
+
+
+def save_to_db(df, db_path):
+    """DataFrame의 마감가 데이터를 데이터베이스에 저장(Upsert)합니다."""
+    if df is None or df.empty:
+        return 0
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        count = 0
+        for idx, row in df.iterrows():
+            d_str = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+            c_val = float(row["Close"])
+            cursor.execute("""
+                INSERT OR REPLACE INTO kospi_daily (date, close)
+                VALUES (?, ?)
+            """, (d_str, c_val))
+            count += 1
+        conn.commit()
+    return count
+
+
+def get_last_2025_from_db(db_path):
+    """DB에 저장된 2025년 마지막 거래일 날짜와 마감가를 반환합니다."""
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT date, close FROM kospi_daily
+            WHERE date LIKE '2025-%'
+            ORDER BY date DESC LIMIT 1
+        """)
+        row = cursor.fetchone()
+        if row:
+            return row[0], float(row[1])
+    return None, None
+
+
+def get_latest_2026_date_from_db(db_path):
+    """DB에 저장된 2026년 데이터 중 가장 최신 날짜(YYYY-MM-DD)를 반환합니다."""
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT MAX(date) FROM kospi_daily
+            WHERE date >= '2026-01-01'
+        """)
+        row = cursor.fetchone()
+        if row and row[0]:
+            return row[0]
+    return None
+
+
+def load_2026_from_db(db_path):
+    """DB에서 2026년 전체 데이터를 불러와 DataFrame으로 반환합니다."""
+    with sqlite3.connect(db_path) as conn:
+        df = pd.read_sql_query(
+            "SELECT date, close as Close FROM kospi_daily WHERE date >= '2026-01-01' ORDER BY date ASC",
+            conn,
+            parse_dates=["date"],
+            index_col="date"
+        )
+        return df
+
+
+# ──────────────────────────────────────────────────────────────
+#  네트워크 데이터 수집
+# ──────────────────────────────────────────────────────────────
 def _extract_close(df_raw):
     """DataFrame에서 Close 시리즈만 추출하여 반환합니다 (MultiIndex 대응)."""
     if df_raw is None or df_raw.empty:
@@ -89,41 +166,6 @@ def fetch_kospi_data(start, end):
 
 
 # ──────────────────────────────────────────────────────────────
-#  텍스트 저장
-# ──────────────────────────────────────────────────────────────
-def save_to_file(df, output_path):
-    """데이터프레임을 텍스트 파일로 저장합니다."""
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("=" * 50 + "\n")
-        f.write("  대한민국 코스피 지수 일별 마감가\n")
-        f.write(f"  수집 기간 : {START_DATE} ~ {END_DATE}\n")
-        f.write(f"  생성 일시 : {now_str}\n")
-        f.write(f"  데이터 건수: {len(df)}건\n")
-        f.write("=" * 50 + "\n\n")
-        f.write(f"{'날짜':<14}{'마감가 (KRW)':>15}{'전일대비':>12}\n")
-        f.write("-" * 42 + "\n")
-
-        current_month = None
-        for idx, row in df.iterrows():
-            date_str  = idx.strftime("%Y-%m-%d")
-            month_key = (idx.year, idx.month)
-            if month_key != current_month:
-                if current_month is not None:
-                    f.write("\n")
-                label = f"  {idx.year}년 {idx.month:02d}월  "
-                f.write(f"{'─' * 14}{label}{'─' * (28 - len(label))}\n")
-                current_month = month_key
-            close_val = float(row["Close"])
-            pct       = row["Pct_Change"]
-            pct_str   = "-" if pct != pct else f"{pct:+.2f}%"
-            f.write(f"{date_str:<14}{close_val:>15,.2f}{pct_str:>12}\n")
-
-    print(f"✅ 저장 완료: {output_path}  ({len(df)}건)")
-
-
-# ──────────────────────────────────────────────────────────────
 #  HTML 저장
 # ──────────────────────────────────────────────────────────────
 def save_to_html(df, output_path, last_2025_date, last_2025, data_source):
@@ -174,8 +216,11 @@ def save_to_html(df, output_path, last_2025_date, last_2025, data_source):
     val_high   = f"{close_series.max():,.2f}"
     val_low    = f"{close_series.min():,.2f}"
     val_avg    = f"{close_series.mean():,.2f}"
-    val_recent = f"{close_series.iloc[-1]:,.0f}"
+    val_recent = f"{close_series.iloc[-1]:,.2f}"
     val_last   = f"{last_2025:,.2f}"
+
+    start_date_str = df.index[0].strftime("%Y-%m-%d")
+    end_date_str   = df.index[-1].strftime("%Y-%m-%d")
 
     # ── HTML 생성 ──
     html = """\
@@ -548,8 +593,8 @@ def save_to_html(df, output_path, last_2025_date, last_2025, data_source):
     # 플레이스홀더를 실제 값으로 치환
     html = (
         html
-        .replace("%%START_DATE%%",  START_DATE)
-        .replace("%%END_DATE%%",    END_DATE)
+        .replace("%%START_DATE%%",  start_date_str)
+        .replace("%%END_DATE%%",    end_date_str)
         .replace("%%TOTAL%%",       str(len(df)))
         .replace("%%NOW%%",         now_str)
         .replace("%%LAST_DATE%%",   last_2025_date)
@@ -573,22 +618,59 @@ def save_to_html(df, output_path, last_2025_date, last_2025, data_source):
 # ──────────────────────────────────────────────────────────────
 def main():
     print("=" * 50)
-    print("  코스피 마감가 수집 프로그램")
+    print("  코스피 마감가 수집 프로그램 (SQLite DB 기반)")
     print("=" * 50)
 
-    import pandas as pd
+    base = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base, DB_FILE)
 
-    # 2025년 마지막 거래일 마감가 조회 (첫날 전일대비 계산용)
-    print("📡 2025년 마지막 거래일 데이터 조회 중...")
-    df_prev, _ = fetch_kospi_data("2025-12-01", "2025-12-31")
-    last_2025      = float(df_prev["Close"].iloc[-1])
-    last_2025_date = df_prev.index[-1].strftime("%Y-%m-%d")
+    # 1. DB 초기화
+    init_db(db_path)
+
+    # 2. 2025년 마지막 거래일 확인 및 필요 시 수집
+    last_2025_date, last_2025 = get_last_2025_from_db(db_path)
+    if not last_2025_date:
+        print("📡 2025년 마지막 거래일 데이터 수집 중...")
+        df_prev, _ = fetch_kospi_data("2025-12-01", "2025-12-31")
+        save_to_db(df_prev, db_path)
+        last_2025_date, last_2025 = get_last_2025_from_db(db_path)
+
     print(f"   └ 2025년 마지막 거래일: {last_2025_date}  종가: {last_2025:,.2f} pt")
 
-    # 본 데이터 수집 (2026-01-01 ~ 오늘)
-    df, data_source = fetch_kospi_data(START_DATE, END_DATE)
+    # 3. 2026년 데이터 업데이트 범위 결정
+    last_stored_date = get_latest_2026_date_from_db(db_path)
+    today_exclusive  = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+    source_label     = "SQLite DB"
 
-    # 2025년 마지막 거래일을 임시로 앞에 붙여 첫 행 전일대비 계산
+    if last_stored_date is None:
+        # 최초 실행 시 2026-01-01부터 전체 수집
+        fetch_start = "2026-01-01"
+        print(f"📡 최초 데이터 수집 중... ({fetch_start} ~ {today_exclusive})")
+        df_new, source_label = fetch_kospi_data(fetch_start, today_exclusive)
+        saved_cnt = save_to_db(df_new, db_path)
+        print(f"💾 데이터베이스 저장 완료: {saved_cnt}건 저장됨 ({DB_FILE})")
+    else:
+        # 기존 저장 데이터의 마지막 날짜로부터 7일 전부터 오늘까지 증분 업데이트
+        last_dt = datetime.strptime(last_stored_date, "%Y-%m-%d")
+        fetch_start_dt = max(last_dt - timedelta(days=7), datetime(2026, 1, 1))
+        fetch_start = fetch_start_dt.strftime("%Y-%m-%d")
+
+        print(f"🔄 증분 업데이트 진행: 기존 마지막 데이터({last_stored_date}) 기준 1주일 전({fetch_start})부터 오늘까지 수집...")
+        try:
+            df_new, source_label = fetch_kospi_data(fetch_start, today_exclusive)
+            saved_cnt = save_to_db(df_new, db_path)
+            print(f"💾 데이터베이스 업데이트 완료: {saved_cnt}건 반영됨 ({DB_FILE})")
+        except Exception as e:
+            print(f"⚠️ 데이터 갱신 중 오류 발생 (기존 DB 데이터로 계속 진행합니다): {e}")
+
+    # 4. 저장된 데이터베이스 파일을 기반으로 전체 2026년 데이터 로드
+    print(f"📂 데이터베이스({DB_FILE})로부터 전체 데이터 로드 중...")
+    df = load_2026_from_db(db_path)
+
+    if df.empty:
+        raise ValueError("데이터베이스에 2026년 데이터가 없습니다.")
+
+    # 5. 2025년 마지막 거래일을 임시로 앞에 붙여 첫 거래일 전일대비 계산
     prev_row = pd.DataFrame(
         {"Close": [last_2025]},
         index=pd.DatetimeIndex([last_2025_date])
@@ -597,18 +679,15 @@ def main():
     df["Pct_Change"] = df["Close"].pct_change() * 100
     df = df.iloc[1:]  # 임시 행 제거
 
-    base = os.path.dirname(os.path.abspath(__file__))
+    # 6. HTML 생성 (데이터베이스 기반)
+    db_source_str = f"SQLite DB ({DB_FILE}) · 최신 동기화 소스: {source_label}"
+    save_to_html(df, os.path.join(base, OUTPUT_FILE_INDEX), last_2025_date, last_2025, db_source_str)
 
-    # 텍스트 저장
-    save_to_file(df, os.path.join(base, OUTPUT_FILE))
-
-    # HTML 저장
-    save_to_html(df, os.path.join(base, OUTPUT_FILE_HTML), last_2025_date, last_2025, data_source)
-    save_to_html(df, os.path.join(base, OUTPUT_FILE_INDEX), last_2025_date, last_2025, data_source)
-
-    # 통계 출력
+    # 7. 통계 출력
     close_series = df["Close"]
-    print(f"\n📊 기간 내 통계")
+    print(f"\n📊 기간 내 통계 (DB 기준)")
+    print(f"   수집 기간 : {df.index[0].strftime('%Y-%m-%d')} ~ {df.index[-1].strftime('%Y-%m-%d')}")
+    print(f"   데이터수 : {len(df)}건")
     print(f"   최고가 : {close_series.max():,.2f} pt")
     print(f"   최저가 : {close_series.min():,.2f} pt")
     print(f"   평  균 : {close_series.mean():,.2f} pt")
